@@ -3,6 +3,8 @@
 
 import PySimpleGUI as sg
 import time
+import pickle
+
 import os.path
 
 
@@ -11,11 +13,12 @@ import os.path
 
 buttonsColumn = [
     [
-       sg.Text("Load Data")
+       sg.Text("Data")
     ],
     [
        sg.Button("New Hunt", key="newHunt"), 
-       sg.Button("Load Hunt", key="loadHunt")
+       sg.Button("Load Hunt", key="loadHunt"),
+       sg.Button("Save",key="save"),
     ],
     [ 
        sg.HSeparator()
@@ -34,8 +37,7 @@ buttonsColumn = [
         sg.Button("Found!!",key="nextCounter"),
         sg.Button("-1", key="removeOne"),
         sg.Button("+1", key="addOne"),
-    ], 
-
+    ],
 ]
 
 # For now will only show the name of the file that was chosen
@@ -89,13 +91,12 @@ running = False
 def start_pause_Timer():
     global elapsedTime
     global initTime
-    global running
-    print(time_convert(elapsedTime))
+    global running 
     if not running:
         running = True
         initTime = time.time()
     else:
-        elapsedTime = elapsedTime + time.time() - initTime
+        elapsedTime = elapsedTime + time.time() - initTime 
         running = False
         initTime = 0
 
@@ -115,26 +116,57 @@ def resetTimer():
     
 
 def createFile(name):
-    path = os.path.abspath("saves") + "/" + name
-    f = open(path,"w+")
-    f.write("00:00:00\n")
-    f.write("1\n")
-    f.write("0\n")
-    f.close()
+    saveFile(name, 0, [0])
+ 
     
 def saveFile(name, time, counterList):
-    path = os.path.abspath("saves") + "/" + name
-    f = open(path,"w")
-    f.write(time+"\n")
-    f.write(str(len(counterList))+"\n")
-    for a in counterList:
-        f.write(str(a)+"\n")
-    f.close()
+    path = os.path.abspath("saves") + "/" + name + '.tmr'
+    with open(path, "wb") as f:  # Usa "wb" para modo de escritura binaria
+        # Empaqueta el tiempo, el tamaño de counterList y counterList en un objeto
+        data = (time, counterList)
+        # Serializa y guarda el objeto en formato binario
+        pickle.dump(data, f)
+ 
+
+
+def selectFile():
+        # Define the layout for the GUI
+    layout = [
+        [sg.Text('Select a file to load')],
+        [sg.Input(), sg.FileBrowse(file_types=(("TMR Files", "*.tmr"),))], # FileBrowse button to open the file dialog
+        [sg.OK(), sg.Cancel()] # OK and Cancel buttons
+    ]
+
+    # Create the window
+    window = sg.Window('File Selector', layout)
+
+    # Event loop to process "events" and get the "values" of the inputs
+    while True:
+        event, values = window.read()
+        if event == sg.WIN_CLOSED or event == 'Cancel': # if user closes window or clicks cancel
+            break
+        if event == 'OK':
+            file_path = values[0] # the first element in values is the file path
+            if file_path: # if a file was selected
+                print(f'You selected: {file_path}')
+                break
+
+    window.close()
+    return file_path
+
 
 
 def loadFile():
-    return 0
+    name = selectFile()
+    if(name == ''):
+        return   None
+    fileName, _ =os.path.splitext( os.path.basename(name) ) # Mejora para obtener el nombre del archivo
+    with open(name, "rb") as f:  # Abre el archivo en modo binario para lectura
+        # Deserializa los datos del archivo
+        time, counterList = pickle.load(f)
     
+    return (fileName, time, counterList)
+ 
 
 def time_convert(inputTime):
     m = inputTime // 60
@@ -155,10 +187,18 @@ def time_convert(inputTime):
 def getTime():
     global initTime
     global elapsedTime
-    
-    return time_convert( elapsedTime + (time.time() - initTime))
+    if running:
+        return  elapsedTime + (time.time() - initTime)
+    else:
+        return elapsedTime - initTime
+
+def parseTime(val): 
+    return time_convert( val)
     
 def main():
+    global initTime
+    global running
+    global elapsedTime
     window = sg.Window("Shiny Timer", layout)
     name = ""
     counterList = [0]
@@ -166,39 +206,49 @@ def main():
     while True:
 
         event, values = window.read(timeout = 0)
-        time = window["Current_Time"].DisplayText
-
+        time = getTime() 
+ 
         if event == "Exit" or event == sg.WIN_CLOSED:
-            break
-        
+            break 
         elif event == "newHunt":
             name = getGameName()
             window["Game_Name"].update(name)
             createFile(name)
         elif event == "loadHunt":
-            loadFile()
+            res = loadFile()
+            if(res is not None):
+                name = res[0] 
+                time =  res[1]  
+                elapsedTime = res[1]  
+                counterList = res[2] 
+                window["Game_Name"].update(name)
+ 
         elif event == "start_pause":
-            start_pause_Timer()
+            start_pause_Timer() 
         elif event == "reset":
             resetTimer()
-            counterList = [0]
+            counterList = [0] 
         elif event == "nextCounter":
-            counterList.append(0)
-            saveFile(name, time, counterList)
+            counterList.append(0)  
         elif event == "removeOne":
-            counterList[-1] -= 1
-            saveFile(name, time, counterList)
+            counterList[-1] -= 1  
         elif event == "addOne":
             counterList[-1] += 1
+        elif event == "save":
+            if(name ==''):
+                name = getGameName()
+                window["Game_Name"].update(name)
+                createFile(name)
+                
             saveFile(name, time, counterList)
 
         window["Currrent_Resets"].update(counterList[-1])
         window["Total_Resets"].update(sum(counterList))
 
-        if initTime != 0:
-            window["Current_Time"].update(getTime())
-        elif initTime == 0 and elapsedTime == 0:
-            window["Current_Time"].update("00:00:00")
+        # if initTime != 0:
+        window["Current_Time"].update(parseTime(time))
+        # elif initTime == 0 and elapsedTime == 0:
+        #     window["Current_Time"].update("00:00:00")
 
                           
     window.close()
